@@ -2,7 +2,7 @@
 package_release.ps1
 
 Creates a zip package for release, including the game, README, license, scripts, and workflow files.
-Run from C:\Users\1102813.
+Run from C:\Users\(youruser).
 #>
 
 $files = @(
