@@ -1,7 +1,7 @@
 <#
 publish_repo.ps1
 Usage:
-  - Open PowerShell in C:\Users\1102813
+  - Open PowerShell in C:\Users\(youruser)
   - Run: .\publish_repo.ps1
   - Or provide parameters: .\publish_repo.ps1 -RepoName StarDodger -Private:$false -RemoteUrl "git@github.com:you/StarDodger.git"
 
