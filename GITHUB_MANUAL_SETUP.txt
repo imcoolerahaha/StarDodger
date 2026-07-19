@@ -25,7 +25,7 @@ Optional release package:
 - Run `package_release.ps1` in PowerShell to generate `StarDodger-full.zip` containing all project files.
 
 If you later get access to a machine with Git, run `publish_repo.ps1` or follow these git commands:
-  cd C:\Users\1102813
+  cd C:\Users\(youruser)
   git init
   git add .
   git commit -m "Initial commit: Star Dodger — single-file game and README"
