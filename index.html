@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Star Dodger</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050816;
+      --panel: rgba(11, 18, 41, 0.9);
+      --text: #f4f6ff;
+      --muted: #9aa6c7;
+      --accent: #5ee7ff;
+      --accent-2: #ffd166;
+      --danger: #ff5c7a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(circle at top, #16214a 0%, var(--bg) 55%, #02040c 100%);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    .game-shell {
+      width: min(92vw, 900px);
+      aspect-ratio: 4 / 5;
+      max-height: 92vh;
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+      overflow: hidden;
+      position: relative;
+      isolation: isolate;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(180deg, #071528 0%, #09142b 50%, #050816 100%);
+      cursor: crosshair;
+    }
+    .hud {
+      position: absolute;
+      inset: 0 0 auto 0;
+      display: flex;
+      justify-content: space-between;
+      padding: 16px 18px;
+      pointer-events: none;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.35);
+    }
+    .hud .pill {
+      background: rgba(7, 12, 24, 0.65);
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 0.95rem;
+      border: 1px solid rgba(255,255,255,0.15);
+      backdrop-filter: blur(8px);
+      transition: transform 120ms cubic-bezier(.2,.9,.3,1);
+    }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(2, 4, 12, 0.72);
+      text-align: center;
+    }
+    .card {
+      width: min(92%, 420px);
+      background: rgba(8, 14, 29, 0.95);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 24px;
+      padding: 28px 24px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+    }
+    h1 { margin: 0 0 10px; font-size: clamp(1.8rem, 3vw, 2.4rem); letter-spacing: 0.03em; }
+    p { margin: 8px 0 0; color: var(--muted); line-height: 1.55; }
+    .buttons { margin-top: 20px; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+    button {
+      border: 0;
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-weight: 700;
+      cursor: pointer;
+      color: var(--bg);
+      background: linear-gradient(135deg, var(--accent), #86f7dd);
+      box-shadow: 0 8px 20px rgba(94, 231, 255, 0.25);
+    }
+    button.secondary { color: var(--text); background: rgba(255,255,255,0.12); box-shadow: none; }
+    .hidden { display: none; }
+    @media (max-width: 640px) {
+      .game-shell { width: 100vw; height: 100vh; max-height: none; aspect-ratio: auto; border-radius: 0; }
+      .hud { padding: 12px; font-size: 0.9rem; }
+      .card { padding: 24px 18px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="game-shell">
+    <canvas id="game" width="900" height="1200"></canvas>
+    <div class="hud">
+      <div class="pill" id="scoreHud">Score: 0</div>
+      <div class="pill" id="highScoreHud">High: 0</div>
+    </div>
+    <div class="overlay" id="startOverlay">
+      <div class="card">
+        <h1>Star Dodger</h1>
+        <p>Guide your ship left and right to dodge the falling asteroids.</p>
+        <p>Collect stars for bonus points and survive as long as you can.</p>
+        <div class="buttons">
+          <button id="startBtn">Start Game</button>
+          <button class="secondary" id="restartBtn">Restart</button>
+          <button class="secondary" id="muteBtn">Mute</button>
+        </div>
+      </div>
+    </div>
+    <div class="overlay hidden" id="gameOverOverlay">
+      <div class="card">
+        <h1>Game Over</h1>
+        <p>Your final score: <span id="finalScore">0</span></p>
+        <p>Press <strong>R</strong>, <strong>Space</strong>, or click Restart to try again.</p>
+        <div class="buttons">
+          <button id="gameOverRestartBtn">Restart</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const startOverlay = document.getElementById('startOverlay');
+    const startBtn = document.getElementById('startBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const scoreHud = document.getElementById('scoreHud');
+    const highScoreHud = document.getElementById('highScoreHud');
+    const W = canvas.width;
+    const H = canvas.height;
+    let state = 'start';
+    let score = 0;
+    let highScore = 0;
+    let ship;
+    let asteroids = [];
+    let stars = [];
+    let particles = [];
+    let backgroundStars = [];
+    let floatingTexts = [];
+    let gameShake = 0;
+    let hudPulse = 0;
+    let audioCtx = null;
+    let muted = localStorage.getItem('starDodgerMute') === '1';
+    let keys = {};
+    let lastTime = 0;
+    let spawnTimer = 0;
+    let difficulty = 1;
+    let gameOverFlash = 0;
+    function getAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      return audioCtx;
+    }
+    function playTone(frequency, duration = 0.12, type = 'sine', volume = 0.16) {
+      if (muted) return;
+      const ctx = getAudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = frequency;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(volume, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.start(now);
+      osc.stop(now + duration + 0.02);
+    }
+    function playCollectSound() {
+      try {
+        // layered tones for a richer collect sound
+        playTone(980, 0.10, 'triangle', 0.12);
+        playTone(1320, 0.06, 'sine', 0.08);
+      } catch (e) {}
+    }
+    function playGameOverSound() {
+      try {
+        // descending feel
+        playTone(220, 0.18, 'sawtooth', 0.14);
+        setTimeout(() => { playTone(160, 0.22, 'sine', 0.12); }, 90);
+        setTimeout(() => { playTone(110, 0.26, 'sine', 0.10); }, 220);
+      } catch (e) {}
+    }
+    function playClickSound() {
+      try { playTone(520, 0.05, 'square', 0.10); } catch (e) {}
+    }
+    // Mute UI
+    const muteBtn = document.getElementById('muteBtn');
+    function updateMuteUI() { if (!muteBtn) return; muteBtn.textContent = muted ? 'Unmute' : 'Mute'; }
+    updateMuteUI();
+    if (muteBtn) muteBtn.addEventListener('click', () => { muted = !muted; localStorage.setItem('starDodgerMute', muted ? '1' : '0'); updateMuteUI(); playClickSound(); });
+    function initBackgroundStars() {
+      backgroundStars = Array.from({ length: 130 }, () => ({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        size: 1 + Math.random() * 1.4,
+        alpha: 0.15 + Math.random() * 0.35,
+        speed: 3 + Math.random() * 4
+      }));
+    }
+    function hideOverlays() {
+      startOverlay.classList.add('hidden');
+      gameOverOverlay.classList.add('hidden');
+    }
+    function resetGame() {
+      score = 0;
+      difficulty = 1;
+      spawnTimer = 0;
+      asteroids = [];
+      stars = [];
+      particles = [];
+      ship = { x: W / 2, y: H - 110, width: 42, height: 28, speed: 440, vx: 0, pop: 0, color: '#7aefff' };
+      state = 'playing';
+      hideOverlays();
+      updateHud();
+    }
+    function updateHud() {
+      const displayScore = Math.floor(score);
+      scoreHud.textContent = `Score: ${displayScore}`;
+      highScoreHud.textContent = `High: ${highScore}`;
+      document.getElementById('finalScore').textContent = displayScore;
+      // HUD pulse feedback
+      const s = 1 + hudPulse * 0.06;
+      scoreHud.style.transform = `scale(${s})`;
+    }
+    function showStartScreen() { state = 'start'; hideOverlays(); startOverlay.classList.remove('hidden'); updateHud(); }
+    function spawnAsteroid() {
+      const size = 20 + Math.random() * 24;
+      asteroids.push({ x: Math.random() * (W - size * 2) + size, y: -size, size, speed: 180 + difficulty * 45 + Math.random() * 90, rotation: Math.random() * Math.PI * 2, spin: (Math.random() - 0.5) * 0.08, hue: 30 + Math.random() * 20 });
+    }
+    function spawnStar() {
+      const size = 12 + Math.random() * 6;
+      stars.push({ x: Math.random() * (W - size * 2) + size, y: -size, size, speed: 150 + Math.random() * 70, twinkle: Math.random() * Math.PI * 2 });
+    }
+    function createParticles(x, y, color, count = 16) {
+      for (let i = 0; i < count; i++) particles.push({ x, y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 1.5) * 6, life: 18 + Math.random() * 14, size: 2 + Math.random() * 3, color, gravity: 0.08 });
+    }
+    function handleInput(delta) {
+      if (state !== 'playing') return;
+      let dir = 0;
+      if (keys['ArrowLeft'] || keys['a'] || keys['A']) dir -= 1;
+      if (keys['ArrowRight'] || keys['d'] || keys['D']) dir += 1;
+      // smooth velocity for better feel
+      ship.vx = ship.vx + (dir * ship.speed - ship.vx) * Math.min(1, delta * 10);
+      ship.x += ship.vx * delta;
+      ship.x = Math.max(30, Math.min(W - 30, ship.x));
+      // decay pop effect
+      ship.pop = Math.max(0, (ship.pop || 0) - delta * 6);
+    }
+    function updateGame(delta) {
+      if (state !== 'playing') return;
+      handleInput(delta);
+      spawnTimer -= delta;
+      if (spawnTimer <= 0) {
+        spawnAsteroid();
+        if (Math.random() < 0.22) spawnStar();
+          spawnTimer = Math.max(0.12, 0.7 - difficulty * 0.035);
+      }
+        difficulty += delta * 0.01;
+        difficulty = Math.min(difficulty, 6);
+      backgroundStars.forEach(star => {
+        star.y += star.speed * delta * 0.4;
+        if (star.y > H) star.y = -2;
+      });
+      for (let i = asteroids.length - 1; i >= 0; i--) {
+        const a = asteroids[i];
+        a.y += a.speed * delta;
+        a.rotation += a.spin;
+        if (a.y - a.size > H) { asteroids.splice(i, 1); continue; }
+        const hit = Math.abs(a.x - ship.x) < a.size * 0.8 && a.y + a.size > ship.y - ship.height / 2 && a.y - a.size < ship.y + ship.height / 2;
+        if (hit) { state = 'gameover'; highScore = Math.max(highScore, Math.floor(score)); updateHud(); showGameOver(); createParticles(ship.x, ship.y, '#ff5c7a', 40); playGameOverSound(); gameOverFlash = 1; break; }
+      }
+      for (let i = stars.length - 1; i >= 0; i--) {
+        const s = stars[i];
+        s.y += s.speed * delta;
+        s.twinkle += delta * 4;
+        if (s.y - s.size > H) { stars.splice(i, 1); continue; }
+        const collected = Math.abs(s.x - ship.x) < 28 && s.y + s.size > ship.y - ship.height / 2 && s.y - s.size < ship.y + ship.height / 2;
+        if (collected) {
+          stars.splice(i, 1);
+          score += 20;
+          highScore = Math.max(highScore, Math.floor(score));
+          updateHud();
+          createParticles(s.x, s.y, '#ffd166', 18);
+          playCollectSound();
+          ship.pop = 1.0;
+          hudPulse = 1.0;
+          floatingTexts.push({ x: s.x, y: s.y - 8, text: '+20', life: 40 });
+        }
+      }
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx * (0.6 + delta * 60);
+        p.y += p.vy * (0.6 + delta * 60);
+        p.vy += (p.gravity || 0.08);
+        p.life -= 1;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+      for (let i = floatingTexts.length - 1; i >= 0; i--) { const t = floatingTexts[i]; t.y -= 0.6; t.life -= 1; if (t.life <= 0) floatingTexts.splice(i, 1); }
+      score += delta * 6;
+      hudPulse = Math.max(0, hudPulse - delta * 3.5);
+      if (state === 'playing') updateHud();
+    }
+    function drawBackground() {
+      const gradient = ctx.createLinearGradient(0, 0, 0, H);
+      gradient.addColorStop(0, '#071528');
+      gradient.addColorStop(0.45, '#0b1d3a');
+      gradient.addColorStop(1, '#02040c');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, W, H);
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      backgroundStars.forEach(star => {
+        ctx.fillStyle = `rgba(156, 226, 255, ${star.alpha})`;
+        ctx.fillRect(star.x, star.y, star.size, star.size);
+      });
+      ctx.restore();
+    }
+    function drawShip() {
+      ctx.save();
+      ctx.translate(ship.x, ship.y);
+      const pop = 1 + (ship.pop || 0) * 0.18;
+      ctx.scale(pop, pop);
+      ctx.shadowBlur = 18 * pop;
+      ctx.shadowColor = '#5ee7ff';
+      ctx.fillStyle = ship.color;
+      ctx.beginPath();
+      ctx.moveTo(0, -ship.height / 2);
+      ctx.lineTo(ship.width / 2, ship.height / 2);
+      ctx.lineTo(0, ship.height / 4);
+      ctx.lineTo(-ship.width / 2, ship.height / 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(0, 2, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    function drawAsteroids() {
+      asteroids.forEach(a => {
+        ctx.save();
+        ctx.translate(a.x, a.y);
+        ctx.rotate(a.rotation);
+        ctx.fillStyle = `hsl(${a.hue}, 70%, 55%)`;
+        ctx.beginPath();
+        for (let i = 0; i < 8; i++) {
+          const ang = (i / 8) * Math.PI * 2;
+          const radius = a.size * (0.7 + (i % 2) * 0.2);
+          if (i === 0) ctx.moveTo(Math.cos(ang) * radius, Math.sin(ang) * radius);
+          else ctx.lineTo(Math.cos(ang) * radius, Math.sin(ang) * radius);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+    function drawStars() {
+      stars.forEach(s => {
+        const pulse = 0.8 + Math.sin(s.twinkle) * 0.25;
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.scale(pulse, pulse);
+        ctx.fillStyle = '#ffd166';
+        ctx.beginPath();
+        ctx.moveTo(0, -s.size);
+        ctx.lineTo(s.size * 0.35, -s.size * 0.35);
+        ctx.lineTo(s.size, 0);
+        ctx.lineTo(s.size * 0.35, s.size * 0.35);
+        ctx.lineTo(0, s.size);
+        ctx.lineTo(-s.size * 0.35, s.size * 0.35);
+        ctx.lineTo(-s.size, 0);
+        ctx.lineTo(-s.size * 0.35, -s.size * 0.35);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+    function drawParticles() {
+      particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = Math.max(0, p.life / 30);
+        ctx.fillRect(p.x, p.y, p.size || 2, p.size || 2);
+      });
+      ctx.globalAlpha = 1;
+      // floating score texts
+      floatingTexts.forEach(t => {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, t.life / 40);
+        ctx.fillStyle = '#ffd166';
+        ctx.font = '20px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(t.text, t.x, t.y);
+        ctx.restore();
+      });
+    }
+    function drawOverlay() {
+      if (state === 'gameover') {
+        ctx.save();
+        ctx.fillStyle = `rgba(255, 92, 122, ${0.12 + gameOverFlash * 0.08})`;
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+        gameOverFlash = Math.max(0, gameOverFlash - 0.02);
+      }
+    }
+    function showGameOver() {
+      state = 'gameover';
+      gameOverOverlay.classList.remove('hidden');
+      gameShake = 10;
+    }
+    function draw() {
+      // apply subtle shake when game over
+      ctx.save();
+      if (gameShake > 0) {
+        const sx = (Math.random() - 0.5) * gameShake;
+        const sy = (Math.random() - 0.5) * gameShake;
+        ctx.translate(sx, sy);
+        gameShake *= 0.88;
+      }
+      drawBackground(); drawStars(); drawAsteroids(); drawParticles(); if (state !== 'start') drawShip(); drawOverlay();
+      ctx.restore();
+    }
+    function loop(timestamp) {
+      const delta = Math.min(0.032, (timestamp - lastTime) / 1000 || 0.016);
+      lastTime = timestamp;
+      if (state === 'playing' || state === 'gameover') updateGame(delta);
+      draw();
+      requestAnimationFrame(loop);
+    }
+    startBtn.addEventListener('click', () => { playClickSound(); resetGame(); });
+    restartBtn.addEventListener('click', () => { playClickSound(); resetGame(); });
+    document.getElementById('gameOverRestartBtn').addEventListener('click', () => { playClickSound(); resetGame(); });
+    window.addEventListener('keydown', (e) => {
+      keys[e.key] = true;
+      if (e.key === 'm' || e.key === 'M') { muted = !muted; localStorage.setItem('starDodgerMute', muted ? '1' : '0'); updateMuteUI(); playClickSound(); }
+      if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'a' || e.key === 'd' || e.key === 'A' || e.key === 'D') && state === 'start') resetGame();
+      if ((e.key === ' ' || e.key === 'Enter' || e.key === 'r' || e.key === 'R') && state !== 'playing') resetGame();
+    });
+    window.addEventListener('keyup', (e) => { keys[e.key] = false; });
+    showStartScreen();
+    updateHud();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

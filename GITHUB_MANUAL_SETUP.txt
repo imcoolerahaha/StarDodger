@@ -1,0 +1,34 @@
+Manual GitHub setup for Star Dodger
+
+1. Create a new repository on GitHub:
+   - Repository name: StarDodger
+   - Visibility: Public
+   - Initialize repository: leave unchecked (no README, no .gitignore, no license)
+
+2. Upload files manually via the GitHub web UI:
+   - index.html
+   - README.md
+   - LICENSE
+   - .gitignore
+   - .github/workflows/ci.yml
+   - publish_repo.ps1
+   - package_release.ps1
+   - StarDodger.zip (optional release package)
+
+3. If GitHub prompts to create a README, you can skip it because README.md already exists.
+
+4. After the files are uploaded, add repository description and topics:
+   - Description: Star Dodger — single-file HTML5 arcade dodge/collect game.
+   - Topics: html5, javascript, canvas, game, arcade, webgame, single-file, local-play
+
+Optional release package:
+- Run `package_release.ps1` in PowerShell to generate `StarDodger-full.zip` containing all project files.
+
+If you later get access to a machine with Git, run `publish_repo.ps1` or follow these git commands:
+  cd C:\Users\1102813
+  git init
+  git add .
+  git commit -m "Initial commit: Star Dodger — single-file game and README"
+  git remote add origin git@github.com:YOUR_USER/StarDodger.git
+  git branch -M main
+  git push -u origin main
